@@ -26,3 +26,24 @@ for ix, segment in enumerate(segments_of_video):
             iq = iq + 1 if iq < len(um) else iq
 
     time.sleep(max(current_buffer_size - dinamic_buffer, 0))
+
+
+        if qi >= self.qi_anterior:
+            m_2 = len(self.qi_array) - 1
+            while True:
+                m_filter = self.qi_array/self.segment_time <= max(self.bandwith_anterior, self.qi_array[0]/self.segment_time)
+                m_1 = self.qi_array[m_filter][-1]
+                m_1 = np.where(self.qi_array == m_1)[0][0]
+                print(m_filter)
+                if m_1 >= qi:
+                    qi = m_1
+                elif m_1 < self.qi_anterior:
+                    qi = self.qi_anterior
+
+                ql_m1 = (dinamic_control_param_list * self.quality_score_array[m_1]) + (dinamic_control_param_list * self.rebuf_avoid_level * self.segment_time) - current_buffer_size/self.qi_array[m_1]
+                ql_m2 = (dinamic_control_param_list * self.quality_score_array[m_2]) + (dinamic_control_param_list * self.rebuf_avoid_level * self.segment_time) - current_buffer_size/self.qi_array[m_2]
+
+                if np.all(ql_m1 >= ql_m2):
+                    break
+                else:
+                    m_2 = m_1

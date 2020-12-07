@@ -6,13 +6,14 @@ import numpy as np
 from datetime import datetime
 from base.configuration_parser import ConfigurationParser
 
-player = Player(0)
+player = Player.get_instance()
+
 
 class R2A_BOLA(IR2A):
 
     def __init__(self, id):
         IR2A.__init__(self, id)
-        self.quality_array = []
+        self.quality_score_array = []
         self.rebuf_avoid_level = 5
         self.request_time = 0
         self.qi_array = []
@@ -35,7 +36,7 @@ class R2A_BOLA(IR2A):
         # pega o tamanho total do video em segundos
         self.video_total_playtime = get_total_video_playtime_from_mpd(parsed_mpd.get_period_info()["duration"][2:])
         # instancia o array de qualidade do BOLA usando uma função LOG tal qual demonstrado no paper
-        self.quality_array = np.array([np.log(bitrate/self.qi_array[0]) for bitrate in self.qi_array])
+        self.quality_score_array = np.array([np.log(bitrate/self.qi_array[0]) for bitrate in self.qi_array])
         # estima um bandwidth de acordo com o download do xml
         self.bandwith_anterior = msg.get_bit_length() / (time.perf_counter() - self.request_time )
 
@@ -46,35 +47,33 @@ class R2A_BOLA(IR2A):
         self.segment_time = msg.get_segment_size()
 
         # tempos de inicio e fim para o BOLA-FINITE
-        t = min(self.video_current_playtime, self.video_total_playtime - self.video_current_playtime)
+        t = min(player.buffer_played, self.video_total_playtime - player.buffer_played)
         t2 = max(t/2, 3 * self.segment_time)
 
         dinamic_buffer = min(self.max_buffer_size, t2/self.segment_time)
-        dinamic_control_param_list = (dinamic_buffer - 1)/(self.quality_array + self.rebuf_avoid_level * self.segment_time)
+        dinamic_control_param_list = (dinamic_buffer - 1)/(self.quality_score_array + (self.rebuf_avoid_level * self.segment_time))
 
         # TODO - Fix Player Class as a Singleton so that we can acces the instance atributes with no problems
         # Pega o tamanho atual do buffer
-        current_buffer_size = player.get_buffer_size()
+        current_buffer_size = player.get_amount_of_video_to_play_without_lock()
 
         # pega o index do bitrate qi a ser utilizado! Referente a linha 6 do algoritmo proposto no paper
-        qi = np.argmax((((dinamic_control_param_list * self.quality_array) + 
-                                    (dinamic_control_param_list * self.rebuf_avoid_level * self.segment_time) - current_buffer_size)/self.qi_array))
-
+        qi = np.argmax((((dinamic_control_param_list * self.quality_score_array[self.qi_anterior]) + 
+                                    (dinamic_control_param_list * self.rebuf_avoid_level * self.segment_time) - current_buffer_size)/self.qi_array[self.qi_anterior]))
+        
         # faz as decisões entre os diversos qis de acordo com a bandwidth dos downloads anteriores
         if qi >= self.qi_anterior:
             m_filter = self.qi_array/self.segment_time <= max(self.bandwith_anterior, self.qi_array[0]/self.segment_time)
             m = self.qi_array[m_filter][-1]
             if m >= self.qi_array[qi]:
-                pass
+                qi = np.where(self.qi_array == m)[0][0]
             elif m < self.qi_array[self.qi_anterior]:
                 qi = self.qi_anterior
-            else: 
-                qi = qi + 1 if qi + 1 < len(self.qi_array) else qi
 
         self.qi_anterior = qi
 
         # De acordo com a linha 21 do algoritmo proposto pelos autores, esperar x segundos para o esvaziamento da fila
-        time.sleep(max((self.segment_time * current_buffer_size - dinamic_buffer), 0))
+        time.sleep(max((self.segment_time * (current_buffer_size - dinamic_buffer)), 0))
 
         msg.add_quality_id(self.qi_array[qi])
 
@@ -91,7 +90,6 @@ class R2A_BOLA(IR2A):
 
     def finalization(self):
         pass
-
 
 def get_total_video_playtime_from_mpd(mpd):
         hours = float(mpd.split('H')[0])

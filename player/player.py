@@ -35,8 +35,18 @@ Player is a Singleton class implementation
 
 class Player(SimpleModule):
 
+    __instance = None
+
+    @staticmethod
+    def get_instance():
+        if Player.__instance is None:
+            raise Exception("Nenhuma instancia ativa!")
+        return Player.__instance
+
     def __init__(self, id):
         SimpleModule.__init__(self, id)
+
+        Player.__instance = self
 
         config_parser = ConfigurationParser.get_instance()
 

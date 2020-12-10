@@ -6,6 +6,12 @@ import numpy as np
 from datetime import datetime
 from base.configuration_parser import ConfigurationParser
 
+# professor Marotta, sem essa implementação aqui não conseguimos pegar a instancia do player
+# e logo não conseguimos acessar os valores do buffer para o funcionamento do algoritmo
+# Nesse projeto a classe Player foi modificada apenas para corrigir esse problema com a adição do metodo estatico
+# get_instance, tal qual no modulo configuration_parser do professor Caetano! Espero que entenda! Obrigado!
+
+# player = Player(0)  # Nao retorna a instancia desejada..
 player = Player.get_instance()
 
 
@@ -25,6 +31,7 @@ class R2A_BOLA(IR2A):
         self.qi_anterior = 0
 
     def handle_xml_request(self, msg):
+        # inicia contagem para estimar o bitrate de download
         self.request_time = time.perf_counter()
         self.send_down(msg)
 
@@ -54,23 +61,27 @@ class R2A_BOLA(IR2A):
         dinamic_control_param_list = (dinamic_buffer - 1)/(self.quality_score_array + (self.rebuf_avoid_level * self.segment_time))
 
         # TODO - Fix Player Class as a Singleton so that we can acces the instance atributes with no problems
+        # A classe Player tem de ser corrigida para conseguirmos acessar a instancia correta..
         # Pega o tamanho atual do buffer
         current_buffer_size = player.get_amount_of_video_to_play_without_lock()
 
         # pega o index do bitrate qi a ser utilizado! Referente a linha 6 do algoritmo proposto no paper
-        qi = np.argmax((((dinamic_control_param_list * self.quality_score_array[self.qi_anterior]) + 
-                                    (dinamic_control_param_list * self.rebuf_avoid_level * self.segment_time) - current_buffer_size)/self.qi_array[self.qi_anterior]))
-        
+        qi = np.argmax(((dinamic_control_param_list * self.quality_score_array[self.qi_anterior]) + 
+                                    (dinamic_control_param_list * self.rebuf_avoid_level * self.segment_time) - 
+                                    current_buffer_size))/self.qi_array[self.qi_anterior]
+
         # faz as decisões entre os diversos qis de acordo com a bandwidth dos downloads anteriores
         if qi >= self.qi_anterior:
             m_filter = self.qi_array/self.segment_time <= max(self.bandwith_anterior, self.qi_array[0]/self.segment_time)
             m = self.qi_array[m_filter][-1]
-            if m >= self.qi_array[qi]:
-                qi = np.where(self.qi_array == m)[0][0]
-            elif m < self.qi_array[self.qi_anterior]:
+            m =  np.where(self.qi_array == m)[0][0]
+            if m >= qi:
+                qi = m
+            elif m < self.qi_anterior:
                 qi = self.qi_anterior
 
-        self.qi_anterior = qi
+        qi = int(qi)
+        self.qi_anterior = int(qi)
 
         # De acordo com a linha 21 do algoritmo proposto pelos autores, esperar x segundos para o esvaziamento da fila
         time.sleep(max((self.segment_time * (current_buffer_size - dinamic_buffer)), 0))
